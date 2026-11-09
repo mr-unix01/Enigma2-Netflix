@@ -7,11 +7,15 @@ from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
 from Components.ActionMap import ActionMap
 from Components.Label import Label
+from enigma import eServiceReference
 
 try:
     from Components.Language import language
 except ImportError:
     language = None
+
+
+TEST_DASH_URL = "https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd"
 
 
 def is_italian():
@@ -43,21 +47,61 @@ class NetflixExperimentalScreen(Screen):
     def __init__(self, session):
         Screen.__init__(self, session)
         self.setTitle("Enigma2 Netflix - Experimental")
+        self.previous_service = None
+        self.test_started = False
         self["heading"] = Label("Enigma2 Netflix")
         self["description"] = Label(tr(
-            "Initial integration screen.\nDASH and DRM playback tests are not implemented yet.",
-            "Schermata iniziale.\nI test di riproduzione DASH e DRM non sono ancora implementati."
+            "Press OK to test unencrypted MPEG-DASH playback.\nTest video: Big Buck Bunny.",
+            "Premi OK per provare la riproduzione MPEG-DASH senza DRM.\nVideo di prova: Big Buck Bunny."
         ))
         self["notice"] = Label(tr(
-            "Netflix compatibility has NOT been established.",
-            "La compatibilita' con Netflix NON e' stata verificata."
+            "Netflix/DRM compatibility is NOT established.",
+            "La compatibilita' Netflix/DRM NON e' verificata."
         ))
-        self["footer"] = Label(tr("OK / EXIT / BACK: Close", "OK / EXIT / BACK: Chiudi"))
+        self["footer"] = Label(tr(
+            "OK: DASH test    EXIT: Close / restore TV",
+            "OK: Test DASH    EXIT: Chiudi / ripristina TV"
+        ))
         self["actions"] = ActionMap(
             ["OkCancelActions"],
-            {"ok": self.close, "cancel": self.close},
+            {"ok": self.start_test, "cancel": self.close},
             -1
         )
+        self.onClose.append(self.restore_service)
+
+    def start_test(self):
+        if self.test_started:
+            return
+        nav = self.session.nav
+        self.previous_service = nav.getCurrentlyPlayingServiceReference()
+        ref = eServiceReference(4097, 0, TEST_DASH_URL)
+        try:
+            result = nav.playService(ref)
+        except Exception as error:
+            self["description"].setText(tr(
+                "DASH test failed: %s", "Test DASH fallito: %s"
+            ) % str(error))
+            return
+        if result not in (None, 0):
+            self["description"].setText(tr(
+                "DASH playback could not be started.",
+                "Impossibile avviare la riproduzione DASH."
+            ))
+            self.restore_service()
+            return
+        self.test_started = True
+        self.hide()
+
+    def restore_service(self):
+        if not self.test_started and self.previous_service is None:
+            return
+        self.test_started = False
+        previous = self.previous_service
+        self.previous_service = None
+        if previous is not None:
+            self.session.nav.playService(previous)
+        else:
+            self.session.nav.stopService()
 
 
 def open_plugin(session, **kwargs):
